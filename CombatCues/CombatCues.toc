@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: CombatCues
+## Notes: Fading text on entering/leaving combat, and party death alerts with optional sound.
+## Author: Claypaenguin
+## Version: 1.0.0
+## SavedVariables: CombatCuesDB
+## OptionalDeps: LibSharedMedia-3.0
+
+Core.lua
+Options.lua
