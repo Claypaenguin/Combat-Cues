@@ -26,13 +26,19 @@ To update, delete the old `CombatCues` folder and unzip the new release in its p
 
 ## Releasing a new version
 
-Push a tag that starts with `v`. GitHub Actions packages the addon, writes the version into the `.toc`,
-and publishes a release with the zip attached:
+1. Add a section for the new version at the top of [CHANGELOG.md](CHANGELOG.md), e.g. `## [1.1.1] - 2026-11-02`.
+   It becomes the release notes on GitHub. Without it, the release build stops with an error.
+2. Commit and push, then push a tag that starts with `v`. GitHub Actions packages the addon, writes the
+   version into the `.toc`, and publishes a release with the zip and the changelog section attached:
 
 ```bash
-git tag v1.0.1
-git push origin main v1.0.1
+git tag v1.1.1
+git push origin main v1.1.1
 ```
+
+To change the notes of a release that already exists, edit its section in CHANGELOG.md, push, then run the
+**Release** workflow by hand from the Actions tab with that tag (e.g. `v1.0.0`).
+`scripts/release-notes.sh 1.1.1` prints the notes for a version locally.
 
 To build the zip locally without a release, run `scripts/package.sh 1.0.1`. The zip ends up in `dist/`.
 

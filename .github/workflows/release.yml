@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Run by hand from the Actions tab to refresh an existing release's notes from CHANGELOG.md.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to update the notes for, e.g. v1.0.0"
+        required: true
 
 permissions:
   contents: write
@@ -10,17 +16,27 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Extract release notes from CHANGELOG.md
+        run: scripts/release-notes.sh "$TAG" > notes.md
+
       - name: Package addon
+        if: github.event_name == 'push'
         id: package
-        run: echo "zip=$(scripts/package.sh "$GITHUB_REF_NAME")" >> "$GITHUB_OUTPUT"
+        run: echo "zip=$(scripts/package.sh "$TAG")" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
+        if: github.event_name == 'push'
         run: |
-          gh release create "$GITHUB_REF_NAME" "${{ steps.package.outputs.zip }}" \
-            --title "CombatCues $GITHUB_REF_NAME" \
-            --generate-notes
+          gh release create "$TAG" "${{ steps.package.outputs.zip }}" \
+            --title "CombatCues $TAG" \
+            --notes-file notes.md
+
+      - name: Update existing release notes
+        if: github.event_name == 'workflow_dispatch'
+        run: gh release edit "$TAG" --notes-file notes.md
