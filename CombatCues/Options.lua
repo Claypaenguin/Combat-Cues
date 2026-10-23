@@ -169,7 +169,7 @@ end
 
 local OUTLINES = { "NONE", "OUTLINE", "THICKOUTLINE" }
 
-local function AppearanceControls(parent, x, y, cfgKey)
+local function AppearanceControls(parent, x, y, cfgKey, noDisplayTime)
     local function cfg() return ns.db[cfgKey] end
     local function setter(field)
         return function(v)
@@ -184,7 +184,9 @@ local function AppearanceControls(parent, x, y, cfgKey)
     y = y - Dropdown(parent, x, y, "Font", ns.GetFontList, getter("font"), setter("font"))
     y = y - Dropdown(parent, x, y, "Outline", function() return OUTLINES end, getter("outline"), setter("outline"))
     y = y - Slider(parent, x, y, "Font size", 8, 72, 1, getter("size"), setter("size"))
-    y = y - Slider(parent, x, y, "Display time (sec)", 0.5, 10, 0.5, getter("hold"), setter("hold"))
+    if not noDisplayTime then
+        y = y - Slider(parent, x, y, "Display time (sec)", 0.5, 10, 0.5, getter("hold"), setter("hold"))
+    end
     y = y - Slider(parent, x, y, "Position X", -1200, 1200, 1, getter("x"), setter("x"))
     y = y - Slider(parent, x, y, "Position Y", -800, 800, 1, getter("y"), setter("y"))
     return y
@@ -192,62 +194,94 @@ end
 
 -- Panel ---------------------------------------------------------------------------
 
+local SCROLL_TEMPLATE = (C_XMLUtil and C_XMLUtil.GetTemplateInfo
+    and C_XMLUtil.GetTemplateInfo("ScrollFrameTemplate")) and "ScrollFrameTemplate" or "UIPanelScrollFrameTemplate"
+
 local function BuildPanel()
     local panel = CreateFrame("Frame")
     panel.name = "CombatCues"
 
-    Label(panel, 16, -16, "CombatCues", "GameFontNormalLarge")
-    Label(panel, 16, -38, "Tip: unlock to drag the text frames, or use the X/Y sliders.", "GameFontDisableSmall")
+    -- Everything sits in a scrollable child so the panel fits any window size.
+    local scroll = CreateFrame("ScrollFrame", nil, panel, SCROLL_TEMPLATE)
+    scroll:SetPoint("TOPLEFT", 0, -4)
+    scroll:SetPoint("BOTTOMRIGHT", -28, 4)
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(640, 1)
+    scroll:SetScrollChild(content)
+    scroll:SetScript("OnSizeChanged", function(self, w) content:SetWidth(w) end)
 
-    Checkbox(panel, 16, -58, "Unlock frames (show and drag to move)",
+    Label(content, 16, -16, "CombatCues", "GameFontNormalLarge")
+    Label(content, 16, -38, "Tip: unlock to drag the text frames, or use the X/Y sliders.", "GameFontDisableSmall")
+
+    Checkbox(content, 16, -58, "Unlock frames (show and drag to move)",
         function() return not ns.db.locked end,
         function(v) ns.SetLocked(not v) end)
-    Button(panel, 330, -58, "Reset positions", 140, function()
+    Button(content, 330, -58, "Reset positions", 140, function()
         ns.ResetPositions()
         Refresh()
     end)
 
+    local function SoundDropdown(x, y, cfgKey)
+        return Dropdown(content, x, y, "Sound", ns.GetSoundList,
+            function() return ns.db[cfgKey].sound end,
+            function(v)
+                ns.db[cfgKey].sound = v
+                ns.PlayAlertSound(v)
+            end)
+    end
+    local function Toggle(x, y, text, cfgKey, field)
+        return Checkbox(content, x, y, text,
+            function() return ns.db[cfgKey][field] end,
+            function(v) ns.db[cfgKey][field] = v end)
+    end
+
     -- Combat column
     local x, y = 16, -100
-    Label(panel, x, y, "Combat text")
+    Label(content, x, y, "Combat text")
     y = y - 22
-    y = y - Checkbox(panel, x, y, "Enabled",
-        function() return ns.db.combat.enabled end,
-        function(v) ns.db.combat.enabled = v end)
-    y = AppearanceControls(panel, x, y, "combat")
-    y = y - TextInput(panel, x, y, "Enter combat text",
+    y = y - Toggle(x, y, "Enabled", "combat", "enabled")
+    y = AppearanceControls(content, x, y, "combat")
+    y = y - TextInput(content, x, y, "Enter combat text",
         function() return ns.db.combat.enterText end,
         function(v) ns.db.combat.enterText = v end)
-    y = y - TextInput(panel, x, y, "Leave combat text",
+    y = y - TextInput(content, x, y, "Leave combat text",
         function() return ns.db.combat.leaveText end,
         function(v) ns.db.combat.leaveText = v end)
-    Button(panel, x, y, "Test", 100, ns.TestCombat)
+    y = y - Button(content, x, y, "Test", 100, ns.TestCombat)
+
+    -- Healer mana, below the combat column
+    y = y - 24
+    Label(content, x, y, "Healer low mana indicator")
+    Label(content, x, y - 16, "Shown while the healer is at or below the threshold. No sound:\nthe game hides mana values from addons.", "GameFontDisableSmall")
+    y = y - 50
+    y = y - Toggle(x, y, "Enabled", "healer", "enabled")
+    y = AppearanceControls(content, x, y, "healer", true)
+    y = y - Slider(content, x, y, "Mana threshold (%)", 1, 99, 1,
+        function() return ns.db.healer.threshold end,
+        function(v) ns.db.healer.threshold = v end)
+    y = y - TextInput(content, x, y, "Message (%s = name)",
+        function() return ns.db.healer.message end,
+        function(v) ns.db.healer.message = v end)
+    y = y - Toggle(x, y, "Only inside dungeons", "healer", "dungeonOnly")
+    y = y - Toggle(x, y, "Solo test: treat me as the healer when not in a group", "healer", "soloTest")
+    y = y - Button(content, x, y, "Test", 100, ns.TestHealer)
+    local bottom = y
 
     -- Death column
     x, y = 330, -100
-    Label(panel, x, y, "Party death alert")
+    Label(content, x, y, "Party death alert")
     y = y - 22
-    y = y - Checkbox(panel, x, y, "Enabled",
-        function() return ns.db.death.enabled end,
-        function(v) ns.db.death.enabled = v end)
-    y = AppearanceControls(panel, x, y, "death")
-    y = y - TextInput(panel, x, y, "Message (%s = name)",
+    y = y - Toggle(x, y, "Enabled", "death", "enabled")
+    y = AppearanceControls(content, x, y, "death")
+    y = y - TextInput(content, x, y, "Message (%s = name)",
         function() return ns.db.death.message end,
         function(v) ns.db.death.message = v end)
-    y = y - Dropdown(panel, x, y, "Sound", ns.GetSoundList,
-        function() return ns.db.death.sound end,
-        function(v)
-            ns.db.death.sound = v
-            ns.PlayAlertSound(v)
-        end)
-    y = y - Checkbox(panel, x, y, "Include myself",
-        function() return ns.db.death.includeSelf end,
-        function(v) ns.db.death.includeSelf = v end)
-    y = y - Checkbox(panel, x, y, "Only inside dungeons",
-        function() return ns.db.death.dungeonOnly end,
-        function(v) ns.db.death.dungeonOnly = v end)
-    Button(panel, x, y, "Test", 100, ns.TestDeath)
+    y = y - SoundDropdown(x, y, "death")
+    y = y - Toggle(x, y, "Include myself", "death", "includeSelf")
+    y = y - Toggle(x, y, "Only inside dungeons", "death", "dungeonOnly")
+    y = y - Button(content, x, y, "Test", 100, ns.TestDeath)
 
+    content:SetHeight(-math.min(bottom, y) + 16)
     panel:SetScript("OnShow", Refresh)
     return panel
 end
@@ -283,11 +317,21 @@ SlashCmdList.COMBATCUES = function(msg)
     elseif cmd == "reset" then
         ns.ResetPositions()
     elseif cmd == "test" then
-        if arg == "death" then ns.TestDeath() else ns.TestCombat() end
+        if arg == "death" then
+            ns.TestDeath()
+        elseif arg == "healer" or arg == "mana" then
+            ns.TestHealer()
+        else
+            ns.TestCombat()
+        end
+    elseif cmd == "debug" then
+        ns.DebugHealer()
+    elseif cmd == "readout" then
+        ns.ToggleManaReadout()
     elseif cmd == "" or cmd == "config" or cmd == "options" then
         OpenOptions()
     else
-        print("|cff33ccffCombatCues|r: /ccues [options | unlock | lock | reset | test combat | test death]")
+        print("|cff33ccffCombatCues|r: /ccues [options | unlock | lock | reset | test combat | test death | test healer]")
     end
     Refresh()
 end
